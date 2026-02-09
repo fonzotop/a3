@@ -1,0 +1,49 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Runtime/state/cache artifacts
+openwebui_data/cache/
+openwebui_data/vector_db/
+openwebui_data/uploads/
+openwebui_data/webui.db
+openwebui_data/pipelines/__pycache__/
+a3_assistant/state/
+a3_assistant/data/*.lock
+a3_assistant/data/active_projects.json
+a3_assistant/data/project_index.json
+a3_assistant/data/projects/
+a3_assistant/pipe/*.bak
+a3_assistant/data/projects/*.lock
+
+# Large/binary artifacts
+*.wav
+*.mp3
+*.bin
+*.safetensors
+*.onnx
+*.h5
+*.sqlite3
+
+# Local backups
+backups/
+_backup_*.py
+
+# Logs
+*.log

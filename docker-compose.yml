@@ -1,0 +1,18 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - WEBUI_AUTH=true
+    volumes:
+      # Данные Open WebUI (пользователи, настройки)
+      - open-webui:/app/backend/data
+
+      # Наш A3 ассистент (проекты, шаги, экспорты)
+      - ./a3_assistant:/a3_assistant
+    restart: unless-stopped
+
+volumes:
+  open-webui:
