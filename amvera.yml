@@ -1,12 +1,13 @@
+---
+version: null
 meta:
   environment: docker
   toolchain:
     name: docker
     version: latest
-
 build:
   dockerfile: Dockerfile
-
 run:
-  containerPort: 8080
   persistenceMount: /app/backend/data
+  containerPort: 8080
+serviceType: compute
