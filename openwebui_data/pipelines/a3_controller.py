@@ -2304,6 +2304,236 @@ class Pipe:
         ]
         return await self._call_llm_json(__request__, __user__, messages)
 
+    def _build_project_summary_lines(
+        self, state: Dict[str, Any], project_id: str, current_step: int
+    ) -> List[str]:
+        raw_problem = state.get("data", {}).get("steps", {}).get("raw_problem", {})
+        spec = state.get("data", {}).get("steps", {}).get("problem_spec", {})
+        process_ctx = state.get("data", {}).get("steps", {}).get("process_context", {})
+        process_def = state.get("data", {}).get("steps", {}).get("process_definition", {})
+        step4_metrics = state.get("data", {}).get("steps", {}).get("current_state_metrics", [])
+        step5_metrics = state.get("data", {}).get("steps", {}).get("target_state_metrics", [])
+        step6_active = state.get("data", {}).get("steps", {}).get("step6_active_problem", "")
+        step6_chain = state.get("data", {}).get("steps", {}).get("step6_why_chain", [])
+        step6_roots = state.get("data", {}).get("steps", {}).get("root_causes", [])
+        step7_plan = state.get("data", {}).get("steps", {}).get("step7_plan", [])
+
+        lines = [
+            f"📊 Проект: {project_id}",
+            "",
+            f"Текущий шаг: {current_step}",
+            "",
+            "Шаг 1 — Сырая проблема:",
+        ]
+        lines.append(
+            f"- {raw_problem.get('raw_problem_sentence','')}" if raw_problem else "- ещё не задана"
+        )
+
+        lines += ["", "Шаг 2 — Конкретизация:"]
+        if spec:
+            lines.append(f"- Где/когда: {spec.get('where_when','')}")
+            lines.append(f"- Масштаб: {spec.get('scale','')}")
+            lines.append(f"- Последствия: {spec.get('consequences','')}")
+            lines.append(f"- Кто страдает: {spec.get('who_suffers','')}")
+            lines.append(f"- Деньги: {spec.get('money_impact','')}")
+        else:
+            lines.append("- ещё не заполнена")
+
+        lines += ["", "Шаг 3 — Процесс (контекст):"]
+        if process_ctx:
+            lines.append(f"- Начало: {process_ctx.get('start_event','')}")
+            lines.append(f"- Окончание: {process_ctx.get('end_event','')}")
+            lines.append(f"- Владелец: {process_ctx.get('owner','')}")
+            lines.append(f"- Периметр: {process_ctx.get('perimeter','')}")
+            metrics = process_ctx.get("result_metrics") or []
+            lines.append(
+                "- Метрики: " + "; ".join([str(m) for m in metrics])
+                if metrics
+                else "- Метрики: ещё не заданы"
+            )
+        else:
+            lines.append("- ещё не заполнен")
+
+        if process_def:
+            lines += ["", "Шаг 3 — Выбор:"]
+            lines.append(f"- Процесс: {process_def.get('process_name','')}")
+            lines.append(f"- Проект: {process_def.get('project_title','')}")
+
+        lines += ["", "Шаг 4 — Текущие метрики:"]
+        if step4_metrics:
+            for m in step4_metrics:
+                if isinstance(m, dict):
+                    name = (m.get("metric") or "").strip()
+                    val = (m.get("current_value") or "").strip()
+                    if name and val:
+                        lines.append(f"- {name}: {val}")
+                    elif name:
+                        lines.append(f"- {name}")
+                else:
+                    name = str(m).strip()
+                    if name:
+                        lines.append(f"- {name}")
+        else:
+            lines.append("- ещё не заданы")
+
+        lines += ["", "Шаг 5 — Целевые значения:"]
+        if step5_metrics:
+            for m in step5_metrics:
+                if isinstance(m, dict):
+                    name = (m.get("metric") or "").strip()
+                    val = (m.get("target_value") or "").strip()
+                    if name and val:
+                        lines.append(f"- {name}: {val}")
+                    elif name:
+                        lines.append(f"- {name}")
+                else:
+                    name = str(m).strip()
+                    if name:
+                        lines.append(f"- {name}")
+        else:
+            lines.append("- ещё не заданы")
+
+        lines += ["", "Шаг 6 — Анализ причин:"]
+        if step6_active:
+            lines.append(f"- Активная проблема: {step6_active}")
+        if step6_chain:
+            lines.append("- Цепочка почему (последние 3):")
+            for w in step6_chain[-3:]:
+                level = w.get("level")
+                answer = w.get("answer")
+                lines.append(f"- Почему {level}: {answer}")
+
+        chains_by_problem = state.get("data", {}).get("steps", {}).get("step6_chains_by_problem", {})
+        if not isinstance(chains_by_problem, dict):
+            chains_by_problem = {}
+        if chains_by_problem:
+            lines.append("- Цепочки почему:")
+            for problem, chain in chains_by_problem.items():
+                lines.append(f"- Проблема: {problem}")
+                if isinstance(chain, list):
+                    for w in chain:
+                        level = w.get("level")
+                        answer = w.get("answer")
+                        lines.append(f"- Почему {level}: {answer}")
+
+        if step6_roots:
+            lines.append("- Корневые причины:")
+            for r in step6_roots:
+                rc = r.get("root_cause")
+                pr = r.get("problem")
+                lines.append(f"- {pr} -> {rc}" if pr else f"- {rc}")
+
+        if not step6_active and not step6_chain and not step6_roots and not chains_by_problem:
+            lines.append("- нет данных")
+        if not step6_active and not step6_chain and not step6_roots:
+            lines.append("- ещё не задано")
+
+        lines += ["", "Шаг 7 — План улучшений:"]
+        if step7_plan:
+            for p in step7_plan:
+                if isinstance(p, dict):
+                    action = (p.get("action") or "").strip()
+                    owner = (p.get("owner") or "").strip()
+                    due = (p.get("due") or "").strip()
+                    if action:
+                        tail = []
+                        if owner:
+                            tail.append(f"ответственный: {owner}")
+                        if due:
+                            tail.append(f"срок: {due}")
+                        suffix = f" ({', '.join(tail)})" if tail else ""
+                        lines.append(f"- {action}{suffix}")
+                else:
+                    action = str(p).strip()
+                    if action:
+                        lines.append(f"- {action}")
+        else:
+            lines.append("- ещё не задан")
+
+        return lines
+
+    async def _analyze_project_with_gpt52(
+        self, __request__, __user__: dict, summary_text: str
+    ) -> str:
+        uid = (__user__ or {}).get("id") if isinstance(__user__, dict) else None
+        user = Users.get_user_by_id(uid) if uid else None
+        call_user = user or (__user__ if isinstance(__user__, dict) else {"id": "system"})
+
+        system_prompt = (
+            "Ты — эксперт по бережливому производству (Lean), A3-методологии Toyota и управлению проектами улучшений.\n"
+            "Проведи профессиональное ревью проекта A3.\n\n"
+            "Пиши ответ только на русском языке.\n"
+            "Не используй английские аббревиатуры и англоязычные термины в тексте ответа.\n"
+            "Используй русские формулировки: например, «анализ корневых причин», «время цикла», «ключевые показатели».\n\n"
+            "Проанализируй проект строго по следующим критериям:\n\n"
+            "1. Качество формулировки проблемы\n"
+            "конкретна ли проблема\n"
+            "измерима ли\n"
+            "привязана ли к процессу и бизнес-эффекту\n"
+            "нет ли симптомов вместо проблемы\n\n"
+            "2. Анализ текущего состояния\n"
+            "достаточно ли метрик\n"
+            "отражают ли они реальную проблему\n"
+            "есть ли baseline\n"
+            "нет ли идеализированных показателей\n\n"
+            "3. Анализ корневых причин\n"
+            "являются ли причины операционными, а не управленческими\n"
+            "есть ли связь причин с потерями времени / денег\n"
+            "завершена ли цепочка «5 почему»\n"
+            "нет ли абстрактных формулировок (например: \"нет стандартов\", \"нет регламента\")\n\n"
+            "4. План мероприятий\n"
+            "связаны ли мероприятия напрямую с корневыми причинами\n"
+            "устраняет ли каждое мероприятие конкретную потерю процесса\n"
+            "есть ли быстрые меры с заметным эффектом\n"
+            "нет ли дублирования мероприятий\n"
+            "есть ли измеримый ожидаемый эффект\n\n"
+            "5. Реалистичность целей\n"
+            "достижимы ли целевые показатели\n"
+            "нет ли целей типа «0%», «0 ошибок»\n"
+            "есть ли промежуточные ключевые показатели\n\n"
+            "6. Общая зрелость проекта\n"
+            "Оцени уровень проекта по шкале:\n"
+            "слабый\n"
+            "средний\n"
+            "сильный\n"
+            "уровень корпоративной трансформации\n\n"
+            "Обязательно выдай:\n"
+            "Сильные стороны проекта (кратко)\n"
+            "Критические замечания (что мешает проекту дать эффект)\n"
+            "Что обязательно улучшить перед защитой проекта (конкретный список)\n"
+            "Какие мероприятия добавить, чтобы проект реально сократил время цикла / потери (конкретные предложения)\n"
+            "Если мероприятия не устраняют конкретную потерю процесса — укажи это отдельно.\n"
+            "Итоговую оценку проекта (1–10) с объяснением.\n\n"
+            "После инструкции ниже будет предоставлено описание проекта A3 для анализа."
+        )
+        user_prompt = "Описание проекта A3 для анализа:\n\n" + (summary_text or "")
+
+        result = await generate_chat_completions(
+            request=__request__,
+            form_data={
+                "model": "gpt-5.2",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": False,
+            },
+            user=call_user,
+        )
+        if not isinstance(result, dict):
+            raise ValueError(f"bad_llm_result_type={type(result).__name__}")
+        choices = result.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("bad_llm_result_choices")
+        first = choices[0] if isinstance(choices[0], dict) else {}
+        message = first.get("message") if isinstance(first, dict) else {}
+        if not isinstance(message, dict):
+            raise ValueError("bad_llm_result_message")
+        content = message.get("content")
+        if content is None:
+            raise ValueError("empty_llm_content")
+        return (content or "").strip()
+
     # ===================== MAIN =====================
 
     async def pipe(
@@ -2472,292 +2702,26 @@ class Pipe:
             state["meta"]["step7_phase"] = "countermeasures"
 
         if cmd == "/summary":
-
-            raw_problem = state.get("data", {}).get("steps", {}).get("raw_problem", {})
-
-            spec = state.get("data", {}).get("steps", {}).get("problem_spec", {})
-
-            process_ctx = (
-
-                state.get("data", {}).get("steps", {}).get("process_context", {})
-
-            )
-
-            process_def = (
-
-                state.get("data", {}).get("steps", {}).get("process_definition", {})
-
-            )
-
-            step4_metrics = (
-
-                state.get("data", {}).get("steps", {}).get("current_state_metrics", [])
-
-            )
-
-            step5_metrics = (
-
-                state.get("data", {}).get("steps", {}).get("target_state_metrics", [])
-
-            )
-
-            step6_active = (
-
-                state.get("data", {}).get("steps", {}).get("step6_active_problem", "")
-
-            )
-
-            step6_chain = (
-
-                state.get("data", {}).get("steps", {}).get("step6_why_chain", [])
-
-            )
-
-            step6_roots = (
-                state.get("data", {}).get("steps", {}).get("root_causes", [])
-            )
-            step7_plan = (
-                state.get("data", {}).get("steps", {}).get("step7_plan", [])
-            )
-
-            lines = [
-
-                f"📊 Проект: {project_id}",
-
-                "",
-
-                f"Текущий шаг: {current_step}",
-
-                "",
-
-                "Шаг 1 — Сырая проблема:",
-
-            ]
-
-            lines.append(
-
-                f"- {raw_problem.get('raw_problem_sentence','')}"
-
-                if raw_problem
-
-                else "- ещё не задана"
-
-            )
-
-            lines += ["", "Шаг 2 — Конкретизация:"]
-
-            if spec:
-
-                lines.append(f"- Где/когда: {spec.get('where_when','')}")
-
-                lines.append(f"- Масштаб: {spec.get('scale','')}")
-
-                lines.append(f"- Последствия: {spec.get('consequences','')}")
-
-                lines.append(f"- Кто страдает: {spec.get('who_suffers','')}")
-
-                lines.append(f"- Деньги: {spec.get('money_impact','')}")
-
-            else:
-
-                lines.append("- ещё не заполнена")
-
-            lines += ["", "Шаг 3 — Процесс (контекст):"]
-
-            if process_ctx:
-
-                lines.append(f"- Начало: {process_ctx.get('start_event','')}")
-
-                lines.append(f"- Окончание: {process_ctx.get('end_event','')}")
-
-                lines.append(f"- Владелец: {process_ctx.get('owner','')}")
-
-                lines.append(f"- Периметр: {process_ctx.get('perimeter','')}")
-
-                metrics = process_ctx.get("result_metrics") or []
-
-                lines.append(
-
-                    "- Метрики: " + "; ".join([str(m) for m in metrics])
-
-                    if metrics
-
-                    else "- Метрики: ещё не заданы"
-
-                )
-
-            else:
-
-                lines.append("- ещё не заполнен")
-
-            if process_def:
-
-                lines += ["", "Шаг 3 — Выбор:"]
-
-                lines.append(f"- Процесс: {process_def.get('process_name','')}")
-
-                lines.append(f"- Проект: {process_def.get('project_title','')}")
-
-            lines += ["", "Шаг 4 — Текущие метрики:"]
-
-            if step4_metrics:
-
-                for m in step4_metrics:
-
-                    if isinstance(m, dict):
-
-                        name = (m.get("metric") or "").strip()
-
-                        val = (m.get("current_value") or "").strip()
-
-                        if name and val:
-
-                            lines.append(f"- {name}: {val}")
-
-                        elif name:
-
-                            lines.append(f"- {name}")
-
-                    else:
-
-                        name = str(m).strip()
-
-                        if name:
-
-                            lines.append(f"- {name}")
-
-            else:
-
-                lines.append("- ещё не заданы")
-
-            lines += ["", "Шаг 5 — Целевые значения:"]
-
-            if step5_metrics:
-
-                for m in step5_metrics:
-
-                    if isinstance(m, dict):
-
-                        name = (m.get("metric") or "").strip()
-
-                        val = (m.get("target_value") or "").strip()
-
-                        if name and val:
-
-                            lines.append(f"- {name}: {val}")
-
-                        elif name:
-
-                            lines.append(f"- {name}")
-
-                    else:
-
-                        name = str(m).strip()
-
-                        if name:
-
-                            lines.append(f"- {name}")
-
-            else:
-
-                lines.append("- ещё не заданы")
-
-            lines += ["", "Шаг 6 — Анализ причин:"]
-
-            if step6_active:
-
-                lines.append(f"- Активная проблема: {step6_active}")
-
-            if step6_chain:
-
-                lines.append("- Цепочка почему (последние 3):")
-
-                for w in step6_chain[-3:]:
-
-                    level = w.get("level")
-
-                    answer = w.get("answer")
-
-                    lines.append(f"- Почему {level}: {answer}")
-
-            chains_by_problem = (
-
-                state.get("data", {}).get("steps", {}).get("step6_chains_by_problem", {})
-
-            )
-
-            if not isinstance(chains_by_problem, dict):
-
-                chains_by_problem = {}
-
-            if chains_by_problem:
-
-                lines.append("- Цепочки почему:")
-
-                for problem, chain in chains_by_problem.items():
-
-                    lines.append(f"- Проблема: {problem}")
-
-                    if isinstance(chain, list):
-
-                        for w in chain:
-
-                            level = w.get("level")
-
-                            answer = w.get("answer")
-
-                            lines.append(f"- Почему {level}: {answer}")
-
-            if step6_roots:
-
-                lines.append("- Корневые причины:")
-
-                for r in step6_roots:
-
-                    rc = r.get("root_cause")
-
-                    pr = r.get("problem")
-
-                    if pr:
-
-                        lines.append(f"- {pr} -> {rc}")
-
-                    else:
-
-                        lines.append(f"- {rc}")
-
-            if not step6_active and not step6_chain and not step6_roots and not chains_by_problem:
-
-                lines.append("- нет данных")
-
-            if not step6_active and not step6_chain and not step6_roots:
-                lines.append("- ещё не задано")
-
-            lines += ["", "Шаг 7 — План улучшений:"]
-            if step7_plan:
-                for p in step7_plan:
-                    if isinstance(p, dict):
-                        action = (p.get("action") or "").strip()
-                        owner = (p.get("owner") or "").strip()
-                        due = (p.get("due") or "").strip()
-                        if action:
-                            tail = []
-                            if owner:
-                                tail.append(f"ответственный: {owner}")
-                            if due:
-                                tail.append(f"срок: {due}")
-                            suffix = f" ({', '.join(tail)})" if tail else ""
-                            lines.append(f"- {action}{suffix}")
-                    else:
-                        action = str(p).strip()
-                        if action:
-                            lines.append(f"- {action}")
-            else:
-                lines.append("- ещё не задан")
-
+            lines = self._build_project_summary_lines(state, project_id, current_step)
             lines.append("")
-            lines.append("Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`")
+            lines.append("Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`")
             return "\n".join(lines)
+
+        if cmd in {"анализ проекта", "/анализ проекта"}:
+            lines = self._build_project_summary_lines(state, project_id, current_step)
+            summary_text = "\n".join(lines)
+            try:
+                review = await self._analyze_project_with_gpt52(__request__, __user__, summary_text)
+            except Exception as e:
+                return (
+                    "⚠️ Не удалось выполнить анализ проекта через `gpt-5.2`.\n"
+                    f"Причина: {e}\n\n"
+                    "Проверь доступность модели и повтори команду `анализ проекта`.\n\n"
+                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`"
+                )
+            out = "🧠 Анализ проекта :\n\n" + (review or "").strip()
+            out += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`"
+            return out
 
         # show instruction if empty
 
