@@ -1,4 +1,4 @@
-FROM ghcr.io/open-webui/open-webui:main
+FROM ghcr.io/open-webui/open-webui:v0.8.1
 
 # Папка с вашим A3 ассистентом
 COPY a3_assistant /a3_assistant
