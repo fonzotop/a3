@@ -143,6 +143,12 @@ git ls-remote --refs amvera master
 - Локальный commit snapshot: `c0f0543`
 - Назначение: быстрый возврат к текущей локально проверенной сборке.
 
+## Локальный snapshot для отката (новая контрольная точка)
+
+- Локальная рабочая сборка (snapshot tag): `local-stable-2026-02-14-2`
+- Локальный commit snapshot: `917219e`
+- Назначение: текущая контрольная точка после исправлений шага 6 и вывода анализа проекта.
+
 Команда локального отката:
 ```powershell
 git checkout local-stable-2026-02-14
@@ -151,4 +157,9 @@ git checkout local-stable-2026-02-14
 Возврат на текущую ветку разработки:
 ```powershell
 git checkout main
+```
+
+Откат к новой контрольной точке:
+```powershell
+git checkout local-stable-2026-02-14-2
 ```
