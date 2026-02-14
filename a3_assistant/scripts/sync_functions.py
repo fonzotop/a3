@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -133,9 +132,11 @@ def main() -> None:
     if not A3_SOURCE.exists():
         raise FileNotFoundError(f"A3 source not found: {A3_SOURCE}")
 
-    # Keep pipeline file synchronized too (fallback runtime mode).
-    PIPELINE_TARGET.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(A3_SOURCE, PIPELINE_TARGET)
+    # Function is the single source of truth for A3 in production.
+    # Remove old pipeline file to avoid duplicate "A3" pipe profiles in UI.
+    if PIPELINE_TARGET.exists():
+        PIPELINE_TARGET.unlink()
+        print(f"[sync] removed legacy pipeline file: {PIPELINE_TARGET}")
 
     _wait_for_function_table(timeout_sec=90)
 
@@ -162,6 +163,10 @@ def main() -> None:
         now=now,
         is_global=0,
     )
+
+    # Disable legacy duplicate pipe if it exists.
+    if "is_active" in columns:
+        cur.execute("UPDATE function SET is_active=0 WHERE id='a3'")
 
     actions = [
         (
