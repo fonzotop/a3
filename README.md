@@ -37,6 +37,15 @@
 - После любой правки логики сначала проверять активный источник исполнения (Function vs pipeline), и только затем считать задачу завершенной.
 - Перед ответом "готово" проверять факт применения именно в активном источнике (а не только наличие изменений в файлах репозитория).
 
+### 2.1 Автосинхронизация при старте контейнера (включено)
+- При каждом старте контейнера выполняется `a3_assistant/scripts/sync_functions.py`.
+- Скрипт синхронизирует в `/app/backend/data/webui.db`:
+  - `a3_pm_methodologist` из `a3_assistant/pipe/a3_controller.py`
+  - `smart_infographic` из `a3_assistant/actions/smart_infographic.py`
+  - `export_to_word_enhanced_formatting` из `a3_assistant/actions/export_to_word_enhanced_formatting.py`
+- После синхронизации запускается OpenWebUI (`a3_assistant/scripts/start_with_sync.sh`).
+- Это устраняет ручные правки `webui.db` после каждого деплоя.
+
 ## 3) Стандартный процесс изменений (dev -> prod)
 
 ### Шаг 1. Локальная проверка

@@ -1,9 +1,10 @@
-FROM ghcr.io/open-webui/open-webui:v0.8.1
+﻿FROM ghcr.io/open-webui/open-webui:v0.8.1
 
-# Папка с вашим A3 ассистентом
 COPY a3_assistant /a3_assistant
-
-# Пайплайн в каталог OpenWebUI
 COPY openwebui_data/pipelines/a3_controller.py /app/backend/data/pipelines/a3_controller.py
 
+RUN chmod +x /a3_assistant/scripts/start_with_sync.sh
+
 EXPOSE 8080
+
+CMD ["bash", "/a3_assistant/scripts/start_with_sync.sh"]
