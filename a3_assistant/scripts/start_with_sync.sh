@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -u
 
 echo "[boot] Starting function sync..."
-python /a3_assistant/scripts/sync_functions.py
-echo "[boot] Sync complete. Starting Open WebUI..."
+if python /a3_assistant/scripts/sync_functions.py; then
+  echo "[boot] Sync complete."
+else
+  echo "[boot] WARN: function sync failed, continuing startup to avoid crash loop."
+fi
 
-exec bash /app/backend/start.sh
+echo "[boot] Starting Open WebUI..."
+if [ -f /app/backend/start.sh ]; then
+  exec bash /app/backend/start.sh
+else
+  exec bash start.sh
+fi
