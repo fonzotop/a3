@@ -189,6 +189,16 @@ def main() -> None:
             },
             None,
         ),
+        (
+            "a3_workflow_buttons",
+            "A3 Workflow Buttons",
+            ACTION_DIR / "a3_workflow_buttons.py",
+            {
+                "description": "Workflow control shortcuts for A3 steps (follow-up buttons).",
+                "manifest": {"title": "A3 Workflow Buttons", "author": "local"},
+            },
+            None,
+        ),
     ]
 
     for function_id, name, path, meta, valves in actions:
@@ -215,7 +225,12 @@ def main() -> None:
         """
         SELECT id, type, is_active, is_global, length(content)
         FROM function
-        WHERE id IN ('a3_pm_methodologist', 'smart_infographic', 'export_to_word_enhanced_formatting')
+        WHERE id IN (
+            'a3_pm_methodologist',
+            'smart_infographic',
+            'export_to_word_enhanced_formatting',
+            'a3_workflow_buttons'
+        )
         ORDER BY id
         """
     ).fetchall()

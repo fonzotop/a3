@@ -243,6 +243,19 @@ class Pipe:
 
         return [p.stem for p in STATE_DIR.glob("*.json") if p.is_file()]
 
+    def _next_project_id(self) -> str:
+
+        max_num = 0
+        for pid in self._list_projects():
+            m = _re_search(r"(\d+)$", pid or "")
+            if not m:
+                continue
+            try:
+                max_num = max(max_num, int(m.group(1)))
+            except Exception:
+                continue
+        return f"{max_num + 1:05d}"
+
     # ---------- extraction ----------
 
     def _extract_user_text(self, body: dict) -> str:
@@ -642,6 +655,7 @@ class Pipe:
     def _is_update_variants_cmd(self, text: str) -> bool:
 
         t = (text or "").strip().lower()
+        t = _re_sub(r"^[^\w/]+", "", t, flags=_re.UNICODE).strip()
 
         if t in {"/regen", "regen", "r", "/refresh", "refresh"}:
 
@@ -2534,6 +2548,27 @@ class Pipe:
             raise ValueError("empty_llm_content")
         return (content or "").strip()
 
+    async def _emit_follow_ups(self, __event_emitter__, follow_ups: list) -> None:
+        if not __event_emitter__ or not isinstance(follow_ups, list) or not follow_ups:
+            return
+        try:
+            await __event_emitter__(
+                {
+                    "type": "chat:message:follow_ups",
+                    "data": {"follow_ups": follow_ups},
+                }
+            )
+        except Exception:
+            return
+
+    async def _emit_step3_follow_ups(self, __event_emitter__) -> None:
+        await self._emit_follow_ups(
+            __event_emitter__,
+            [
+                "🔁 ОБНОВИТЬ ВАРИАНТЫ",
+            ],
+        )
+
     # ===================== MAIN =====================
 
     async def pipe(
@@ -2564,7 +2599,11 @@ class Pipe:
 
         cmd_line = self._first_cmd_line(user_text)
         if not cmd_line:
-            m = _re_search(r"(\/(?:startnew|continue|projects|summary)\b.*)", user_text, flags=_re.IGNORECASE)
+            m = _re_search(
+                r"(\/(?:startnew|continue|projects|summary|создать(?:\s+|_)проект)\b.*)",
+                user_text,
+                flags=_re.IGNORECASE,
+            )
             if m:
                 cmd_line = m.group(1).strip()
         cmd = cmd_line.lower().strip()
@@ -2584,21 +2623,9 @@ class Pipe:
 
             return "📂 Проекты:\n" + "\n".join([f"- {p}" for p in projects])
 
-        # ✅ /startnew: force-create fresh project
-
-        if cmd.startswith("/startnew"):
-
-            parts = cmd_line.split()
-
-            if len(parts) < 2:
-
-                return "❗Укажи ID проекта: `/startnew A3-0006`"
-
-            new_id = parts[1].strip()
-
-            if not new_id:
-
-                return "❗Укажи ID проекта: `/startnew A3-0006`"
+        # ✅ /startnew or /создать проект: always create a fresh project with auto ID
+        if cmd.startswith("/startnew") or cmd.startswith("/создать проект") or cmd.startswith("/создать_проект"):
+            new_id = self._next_project_id()
 
             self._set_active_project(user_id, new_id)
 
@@ -2622,7 +2649,7 @@ class Pipe:
 
                 f"{step1.get('instruction','')}\n\n"
 
-                f"Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                f""
 
             )
 
@@ -2674,7 +2701,7 @@ class Pipe:
 
                 f"{step1.get('instruction','')}\n\n"
 
-                f"Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                f""
 
             )
 
@@ -2703,8 +2730,8 @@ class Pipe:
 
         if cmd == "/summary":
             lines = self._build_project_summary_lines(state, project_id, current_step)
+            lines.append("Команда: `анализ проекта`")
             lines.append("")
-            lines.append("Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`")
             return "\n".join(lines)
 
         if cmd in {"анализ проекта", "/анализ проекта"}:
@@ -2717,10 +2744,10 @@ class Pipe:
                     "⚠️ Не удалось выполнить анализ проекта через `gpt-5.2`.\n"
                     f"Причина: {e}\n\n"
                     "Проверь доступность модели и повтори команду `анализ проекта`.\n\n"
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`"
+                    ""
                 )
             out = "🧠 Анализ проекта :\n\n" + (review or "").strip()
-            out += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`, `анализ проекта`"
+            out += "\n\nКоманда: `анализ проекта`"
             return out
 
         # show instruction if empty
@@ -2738,7 +2765,7 @@ class Pipe:
 
                     "✍️ Напиши ответ и отправь сообщение.\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -2750,7 +2777,7 @@ class Pipe:
 
                     f"❗Не найден step_{current_step}.json в папке steps.\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -2776,7 +2803,7 @@ class Pipe:
 
                     "Пример: «Лимиты на использование машин и механизмов согласовываются несвоевременно».\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -2790,7 +2817,7 @@ class Pipe:
 
                     "Пример: «…согласовывается несвоевременно / часто задерживается / не выполняется в срок».\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -2848,7 +2875,7 @@ class Pipe:
 
                 )
 
-            msg += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+            msg += ""
 
             return msg
 
@@ -2905,7 +2932,7 @@ class Pipe:
                     )
 
                 msg += "\n\nЧтобы обновить варианты — напиши: `обнови варианты`."
-                msg += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                msg += ""
 
                 return msg
 
@@ -2964,7 +2991,7 @@ class Pipe:
 
                     + hints_block
 
-                    + "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    + ""
 
                 )
 
@@ -3065,7 +3092,7 @@ class Pipe:
                     msg += "\n".join([f"- `{m}`" for m in metric_sug[:5]])
 
                 msg += "\n\n" + "\u0427\u0442\u043e\u0431\u044b \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b \u2014 \u043d\u0430\u043f\u0438\u0448\u0438: `\u043e\u0431\u043d\u043e\u0432\u0438 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b`."
-                msg += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                msg += ""
 
                 return msg
 
@@ -3077,7 +3104,7 @@ class Pipe:
 
                 "Создай `step_3.json` в папке steps — и продолжим.\n\n"
 
-                "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                ""
 
             )
 
@@ -3167,7 +3194,7 @@ class Pipe:
 
                     msg += "```\nПроцесс: ...\nНазвание проекта: ...\n```\n"
 
-                    msg += "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    msg += ""
 
                     return msg
 
@@ -3221,7 +3248,7 @@ class Pipe:
 
                     msg += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
 
-                    msg += "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    msg += ""
 
                     return msg
 
@@ -3251,7 +3278,7 @@ class Pipe:
 
                     msg += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
 
-                    msg += "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    msg += ""
 
                     return msg
 
@@ -3367,7 +3394,7 @@ class Pipe:
 
                                 "Значения запросим следующим сообщением.\n\n"
 
-                                "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                                ""
 
                             )
 
@@ -3385,7 +3412,7 @@ class Pipe:
 
                             "Создай `step_4.json`, и продолжим.\n\n"
 
-                            "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                            ""
 
                         )
 
@@ -3417,7 +3444,7 @@ class Pipe:
 
                     msg += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
 
-                    msg += "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    msg += ""
 
                     return msg
 
@@ -3431,7 +3458,7 @@ class Pipe:
 
                         "⚠️ Не вижу выбор. Используй шаблон.\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -3523,7 +3550,7 @@ class Pipe:
 
                         "Значения запросим следующим сообщением.\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -3541,7 +3568,7 @@ class Pipe:
 
                     "Создай `step_4.json`, и продолжим.\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -3691,8 +3718,9 @@ class Pipe:
 
                 out += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
 
-                out += "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                out += ""
 
+                await self._emit_step3_follow_ups(__event_emitter__)
                 return out
 
             step3 = self._load_step(3) if self._step_exists(3) else {}
@@ -3776,7 +3804,8 @@ class Pipe:
                 msg += "\n".join([f"- `{m}`" for m in metric_suggestions[:5]])
 
             msg += "\n\nЧтобы обновить варианты — напиши: `обнови варианты`."
-            msg += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+            msg += ""
+            await self._emit_step3_follow_ups(__event_emitter__)
             return msg
 
         # ================= STEP 4 =================
@@ -3849,7 +3878,7 @@ class Pipe:
 
                         "Напиши: `обнови варианты`.\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -3889,7 +3918,7 @@ class Pipe:
 
                     )
 
-                    msg += "\n```\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    msg += ""
 
                     state["data"].setdefault("steps", {})
 
@@ -3947,7 +3976,7 @@ class Pipe:
 
                     "```\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -3975,7 +4004,7 @@ class Pipe:
 
                             "Значения запросим следующим сообщением.\n\n"
 
-                            "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                            ""
 
                         )
 
@@ -4001,7 +4030,7 @@ class Pipe:
 
                             "Метрика: ...\n\n"
 
-                            "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                            ""
 
                         )
 
@@ -4027,7 +4056,7 @@ class Pipe:
 
                         "Чтобы обновить метрики — напиши: `обнови варианты`.\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -4091,7 +4120,7 @@ class Pipe:
 
                                 "Значения запросим следующим сообщением.\n\n"
 
-                                "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                                ""
 
                             )
 
@@ -4117,7 +4146,7 @@ class Pipe:
 
                             "```\nМетрики:\n- ...\n- ...\n```\n\n"
 
-                            "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                            ""
 
                         )
 
@@ -4137,7 +4166,7 @@ class Pipe:
                         + "\n".join([f"- `{x}`" for x in sugg])
                         + "\n\nЗначения запросим следующим сообщением.\n\n"
                         "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
                     return msg
 
@@ -4165,7 +4194,7 @@ class Pipe:
                         "Выбирая показатели, помни: данные нужно подтверждать свидетельствами.\n\n"
                         "Значения запросим следующим сообщением.\n\n"
                         "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
                     return msg
 
@@ -4179,7 +4208,7 @@ class Pipe:
 
                         "```\nМетрики:\n- ...\n- ...\n```\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -4191,7 +4220,7 @@ class Pipe:
 
                         "Сократи список и отправь снова.\n\n"
 
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
 
                     )
 
@@ -4219,7 +4248,7 @@ class Pipe:
 
                 )
 
-                msg += "\n```\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                msg += ""
 
                 return msg
 
@@ -4243,7 +4272,7 @@ class Pipe:
 
                     "⚠️ Не найдены метрики шага 4. Сначала выбери метрики текущего состояния.\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -4263,7 +4292,7 @@ class Pipe:
 
                     "⚠️ Не удалось сформировать список метрик для целевых значений.\n\n"
 
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -4305,7 +4334,7 @@ class Pipe:
 
                 msg += "```\n"
 
-                msg += "\n\nКоманды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                msg += ""
 
                 return msg
 
@@ -4455,7 +4484,7 @@ class Pipe:
                 "Ответь одним сообщением по шаблону:\n"
                 "```\nПроблемы:\n- ...\n- ...\n```\n\n"
                 "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
-                "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                ""
             )
             return msg
 
@@ -4596,7 +4625,7 @@ class Pipe:
 
                     "\u0427\u0442\u043e\u0431\u044b \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b \u2014 \u043d\u0430\u043f\u0438\u0448\u0438: `\u043e\u0431\u043d\u043e\u0432\u0438 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b`.\n\n"
 
-                    "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -4653,7 +4682,7 @@ class Pipe:
 
                     "\u0414\u043b\u044f \u0444\u0438\u043a\u0441\u0430\u0446\u0438\u0438 \u043a\u043e\u0440\u043d\u0435\u0432\u043e\u0439 \u043f\u0440\u0438\u0447\u0438\u043d\u044b \u043d\u0430\u043f\u0438\u0448\u0438: `\u0437\u0430\u0444\u0438\u043a\u0441\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043a\u0430\u043a \u043a\u043e\u0440\u043d\u0435\u0432\u0443\u044e`.\n"
 
-                    "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
 
                 )
 
@@ -4884,6 +4913,24 @@ class Pipe:
 
                         state["data"]["steps"]["step6_why_chain"] = []
 
+                        try:
+
+                            s_data = await self._get_step6_why_suggestions(
+
+                                __request__, __user__, next_problem
+
+                            )
+
+                        except Exception:
+
+                            s_data = {"why_suggestions": []}
+
+                        state["data"]["steps"]["step6_why_suggestions"] = _normalize_list(
+
+                            s_data.get("why_suggestions") or [], limit=5
+
+                        )
+
                         self._save_state(project_id, state)
 
                         return _step6_why_prompt(
@@ -4930,7 +4977,7 @@ class Pipe:
                                 "\u27a1\ufe0f \u0428\u0430\u0433 7: \u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b \u043f\u043e \u043a\u043e\u0440\u043d\u0435\u0432\u044b\u043c \u043f\u0440\u0438\u0447\u0438\u043d\u0430\u043c.\n\n"
                                 "\u041e\u0442\u0432\u0435\u0442\u044c \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443:\n"
                                 "```\n\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b:\n- ...\n- ...\n```\n\n"
-                                "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                                ""
                             )
                         active_root = root_texts[0]
                         pending_roots = root_texts[1:]
@@ -4976,7 +5023,7 @@ class Pipe:
                             "\u041e\u0442\u0432\u0435\u0442\u044c \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443:\n"
                             "```\n\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b:\n- ...\n- ...\n```\n\n"
                             "\u0427\u0442\u043e\u0431\u044b \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b, \u043d\u0430\u043f\u0438\u0448\u0438: `\u043e\u0431\u043d\u043e\u0432\u0438 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b`.\n\n"
-                            "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                            ""
                         )
                         return msg
                     return (
@@ -4984,7 +5031,7 @@ class Pipe:
                         "\u0417\u0430\u0444\u0438\u043a\u0441\u0438\u0440\u043e\u0432\u0430\u043d\u044b \u043a\u043e\u0440\u043d\u0435\u0432\u044b\u0435 \u043f\u0440\u0438\u0447\u0438\u043d\u044b.\n\n"
                         "\u27a1\ufe0f \u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0439 \u0448\u0430\u0433 (7) \u0435\u0449\u0451 \u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d: \u043d\u0435\u0442 \u0444\u0430\u0439\u043b\u0430 `step_7.json`.\n"
                         "\u0421\u043e\u0437\u0434\u0430\u0439 `step_7.json`, \u0438 \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u043c.\n\n"
-                        "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
 
                 regen = self._is_update_variants_cmd(user_text)
@@ -5143,7 +5190,7 @@ class Pipe:
             if not root_causes:
                 return (
                     "⚠️ Сначала нужно зафиксировать корневые причины на шаге 6.\n\n"
-                    "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
                 )
 
             def _rc_text(rc):
@@ -5163,7 +5210,7 @@ class Pipe:
                     "\u041e\u0442\u0432\u0435\u0442\u044c \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443:\n"
                     "```\n\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b:\n- ...\n- ...\n```\n\n"
                     "\u0427\u0442\u043e\u0431\u044b \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b, \u043d\u0430\u043f\u0438\u0448\u0438: `\u043e\u0431\u043d\u043e\u0432\u0438 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b`.\n\n"
-                    "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
                 )
                 return msg
 
@@ -5193,7 +5240,7 @@ class Pipe:
                     )
                 msg += (
                     "\u0415\u0441\u043b\u0438 \u0432\u0441\u0451 \u043e\u043a, \u043d\u0430\u043f\u0438\u0448\u0438: `\u043e\u043a`.\n\n"
-                    "\u041a\u043e\u043c\u0430\u043d\u0434\u044b: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                    ""
                 )
                 return msg
             # phase: countermeasures
@@ -5202,7 +5249,7 @@ class Pipe:
                 if not root_texts:
                     return (
                         "⚠️ Не вижу корневых причин. Заполни шаг 6.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
 
                 steps = state.get("data", {}).get("steps", {})
@@ -5340,7 +5387,7 @@ class Pipe:
                     return (
                         "⚠️ Нет выбранных контрмер. Давай выберем их заново.\n\n"
                         "Напиши: `обнови варианты`.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
 
                 plan = steps.get("step7_plan", [])
@@ -5382,7 +5429,7 @@ class Pipe:
                         "План улучшений зафиксирован.\n\n"
                         "➡️ Следующий шаг (8) ещё не настроен: нет файла `step_8.json`.\n"
                         "Создай `step_8.json`, и продолжим.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
 
                 parsed = self._parse_plan_items(user_text)
@@ -5392,7 +5439,7 @@ class Pipe:
                 if len(parsed) > 15:
                     return (
                         "⚠️ План может содержать максимум 15 мероприятий. Сократи список и пришли снова.\n\n"
-                        "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+                        ""
                     )
 
                 state["data"]["steps"]["step7_plan"] = parsed
@@ -5412,6 +5459,6 @@ class Pipe:
 
             "Дальше расширим логику под следующий шаг.\n\n"
 
-            "Команды: `/summary`, `/projects`, `/continue <ID>`, `/startnew <ID>`"
+            ""
 
         )
