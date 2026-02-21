@@ -5125,6 +5125,8 @@ class Pipe:
                 if not isinstance(pending, list):
                     pending = root_texts[:]
                 if not active:
+                    if not pending:
+                        pending = root_texts[:]
                     active = pending.pop(0)
                 state["data"].setdefault("steps", {})
                 state["data"]["steps"]["step7_pending_root_causes"] = pending
