@@ -54,15 +54,7 @@ class Action:
             return {"current_step": 1, "meta": {}, "data": {}}
 
     def _step_actions(self, step: int) -> List[str]:
-        # String follow-ups are supported by OpenWebUI v0.8.x and clickable in chat.
-        primary = ["🔁 ОБНОВИТЬ ВАРИАНТЫ"]
-        if step == 3:
-            return primary
-        if step == 4:
-            return primary
-        if step == 6:
-            return primary
-        return primary
+        return []
 
     async def action(
         self,

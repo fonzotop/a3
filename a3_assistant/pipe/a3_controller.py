@@ -152,7 +152,7 @@ class Pipe:
 
         DEFAULT_PROJECT_ID: str = Field(default="A3-0001")
 
-        METHODOLOGIST_MODEL: str = Field(default="gpt-4o-mini")
+        METHODOLOGIST_MODEL: str = Field(default="gpt-5.2")
 
     def __init__(self):
 
@@ -1325,9 +1325,7 @@ class Pipe:
     def _model_candidates(self) -> List[str]:
         candidates = [
             (self.valves.METHODOLOGIST_MODEL or "").strip(),
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.1-mini",
+            "gpt-5.2",
         ]
         out: List[str] = []
         seen = set()
@@ -2562,12 +2560,7 @@ class Pipe:
             return
 
     async def _emit_step3_follow_ups(self, __event_emitter__) -> None:
-        await self._emit_follow_ups(
-            __event_emitter__,
-            [
-                "🔁 ОБНОВИТЬ ВАРИАНТЫ",
-            ],
-        )
+        return
 
     # ===================== MAIN =====================
 
@@ -3418,159 +3411,33 @@ class Pipe:
 
                 # --- strict choose ---
 
-                if not (m_proc and m_proj):
+                msg = "⚠️ Не вижу выбор.\n\n"
 
-                    msg = "⚠️ Не вижу выбор.\n\n"
+                if pv:
 
-                    if pv:
+                    msg += "Процессы (варианты):\n" + "\n".join(
 
-                        msg += "Процессы (варианты):\n" + "\n".join(
+                        [f"- `{x}`" for x in pv]
 
-                            [f"- `{x}`" for x in pv]
+                    ) + "\n\n"
 
-                        ) + "\n\n"
+                if prj:
 
-                    if prj:
+                    msg += "Проекты (варианты):\n" + "\n".join(
 
-                        msg += "Проекты (варианты):\n" + "\n".join(
+                        [f"- `{x}`" for x in prj]
 
-                            [f"- `{x}`" for x in prj]
+                    ) + "\n\n"
 
-                        ) + "\n\n"
+                msg += "Ответь одним сообщением по шаблону:\n"
 
-                    msg += "Ответь одним сообщением по шаблону:\n"
+                msg += "```\nПроцесс: ...\nНазвание проекта: ...\n```\n"
 
-                    msg += "```\nПроцесс: ...\nНазвание проекта: ...\n```\n"
+                msg += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
 
-                    msg += "Чтобы обновить варианты — напиши: `обнови варианты`.\n\n"
+                msg += ""
 
-                    msg += ""
-
-                    return msg
-
-                process_name = m_proc.group(1).strip()
-
-                project_title = m_proj.group(1).strip()
-
-                if not process_name or not project_title:
-
-                    return (
-
-                        "⚠️ Не вижу выбор. Используй шаблон.\n\n"
-
-                        ""
-
-                    )
-
-                state["data"].setdefault("steps", {})
-
-                state["data"]["steps"]["process_definition"] = {
-
-                    "process_name": process_name,
-
-                    "project_title": project_title,
-
-                    "notes": "",
-
-                }
-
-                state["meta"]["step3_phase"] = "done"
-
-                state["current_step"] = 4
-
-                state["meta"]["step4_phase"] = "proposal"
-
-                self._save_state(project_id, state)
-
-                if self._step_exists(4):
-
-                    try:
-
-                        step4_data = await self._get_step4_metric_proposals(
-
-                            __request__,
-
-                            __user__,
-
-                            raw_problem,
-
-                            problem_spec,
-
-                            ctx,
-
-                        )
-
-                    except Exception:
-
-                        step4_data = {"metric_suggestions": []}
-
-                    step4 = self._load_step(4)
-
-                    sugg = step4_data.get("metric_suggestions") or []
-
-                    state["data"].setdefault("steps", {})
-
-                    state["data"]["steps"][
-
-                        "current_state_metric_proposals"
-
-                    ] = step4_data
-
-                    self._save_state(project_id, state)
-
-                    msg = (
-
-                        "✅ Шаг 3 завершён.\n\n"
-
-                        f"Выбрали процесс: {process_name}\n"
-
-                        f"Название проекта: {project_title}\n\n"
-
-                        f"➡️ Шаг 4: {step4.get('title','')}\n\n"
-
-                        f"{step4.get('instruction','')}\n\n"
-
-                        "Ответь одним сообщением по шаблону:\n"
-
-                        "```\nМетрики:\n- ...\n- ...\n```\n"
-
-                    )
-
-                    if sugg:
-
-                        msg += "\nМетрики (варианты):\n" + "\n".join(
-
-                            [f"- `{x}`" for x in sugg]
-
-                        )
-
-                    msg += (
-
-                        "\n\n"
-
-                        "Значения запросим следующим сообщением.\n\n"
-
-                        ""
-
-                    )
-
-                    return msg
-
-                return (
-
-                    "✅ Шаг 3 завершён.\n\n"
-
-                    f"Выбрали процесс: {process_name}\n"
-
-                    f"Название проекта: {project_title}\n\n"
-
-                    "➡️ Следующий шаг (4) ещё не настроен: нет файла `step_4.json`.\n"
-
-                    "Создай `step_4.json`, и продолжим.\n\n"
-
-                    ""
-
-                )
+                return msg
 
             # ---------- PHASE: context ----------
             regen = self._is_update_variants_cmd(user_text)

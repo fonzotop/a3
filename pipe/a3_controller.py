@@ -152,7 +152,7 @@ class Pipe:
 
         DEFAULT_PROJECT_ID: str = Field(default="A3-0001")
 
-        METHODOLOGIST_MODEL: str = Field(default="gpt-4o-mini")
+        METHODOLOGIST_MODEL: str = Field(default="gpt-5.2")
 
     def __init__(self):
 
@@ -1305,9 +1305,7 @@ class Pipe:
     def _model_candidates(self) -> List[str]:
         candidates = [
             (self.valves.METHODOLOGIST_MODEL or "").strip(),
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.1-mini",
+            "gpt-5.2",
         ]
         out: List[str] = []
         seen = set()

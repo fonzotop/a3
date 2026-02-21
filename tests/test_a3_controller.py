@@ -702,7 +702,7 @@ class TestPipeIntegration:
         """Проверка инициализации Valves"""
         assert hasattr(pipe, "valves")
         assert pipe.valves.DEFAULT_PROJECT_ID == "A3-0001"
-        assert pipe.valves.METHODOLOGIST_MODEL == "gpt-4o-mini"
+        assert pipe.valves.METHODOLOGIST_MODEL == "gpt-5.2"
 
 
 if __name__ == "__main__":
