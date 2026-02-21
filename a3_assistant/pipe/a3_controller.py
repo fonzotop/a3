@@ -154,12 +154,82 @@ class Pipe:
 
         METHODOLOGIST_MODEL: str = Field(default="gpt-5.2")
 
+    _EDIT_FIELDS: dict = {
+        "проблема": ("data", "steps", "raw_problem", "raw_problem_sentence"),
+        "где/когда": ("data", "steps", "problem_spec", "where_when"),
+        "масштаб": ("data", "steps", "problem_spec", "scale"),
+        "последствия": ("data", "steps", "problem_spec", "consequences"),
+        "кто страдает": ("data", "steps", "problem_spec", "who_suffers"),
+        "деньги": ("data", "steps", "problem_spec", "money_impact"),
+        "событие начала": ("data", "steps", "process_context", "start_event"),
+        "событие окончания": ("data", "steps", "process_context", "end_event"),
+        "владелец процесса": ("data", "steps", "process_context", "owner"),
+        "периметр": ("data", "steps", "process_context", "perimeter"),
+        "название процесса": ("data", "steps", "process_definition", "process_name"),
+        "название проекта": ("data", "steps", "process_definition", "project_title"),
+    }
+
     def __init__(self):
 
         self.valves = self.Valves()
 
     def pipes(self):
         return [{"id": "a3", "name": "A3 Project Controller"}]
+
+    def _get_edit_field(self, state: dict, path: tuple) -> str:
+        obj = state
+        for key in path[:-1]:
+            if not isinstance(obj, dict):
+                return ""
+            obj = obj.get(key) or {}
+        if not isinstance(obj, dict):
+            return ""
+        return str(obj.get(path[-1], "") or "").strip()
+
+    def _set_edit_field(self, state: dict, path: tuple, value: str) -> None:
+        obj = state
+        for key in path[:-1]:
+            if not isinstance(obj.get(key), dict):
+                obj[key] = {}
+            obj = obj[key]
+        obj[path[-1]] = value
+
+    def _build_edit_view(self, state: dict, project_id: str) -> str:
+        lines = [
+            f"✏️ Режим редактирования проекта `{project_id}`\n",
+            "Отредактируй нужные поля в блоке ниже, скопируй и отправь обратно.",
+            "Чтобы выйти без изменений — напиши `готово`.\n",
+            "```",
+        ]
+        for label, path in self._EDIT_FIELDS.items():
+            value = self._get_edit_field(state, path)
+            lines.append(f"{label.capitalize()}: {value}")
+        lines.append("```")
+        return "\n".join(lines)
+
+    def _parse_edit_message(self, text: str) -> dict:
+        result = {}
+        for line in (text or "").splitlines():
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            key_norm = key.strip().lower()
+            value = value.strip()
+            if key_norm in self._EDIT_FIELDS and value:
+                result[key_norm] = value
+        return result
+
+    def _validate_edit_fields(self, fields: dict) -> list:
+        """Returns list of validation error strings. Empty = OK."""
+        errors = []
+        str_fields = set(self._EDIT_FIELDS.keys())
+        min_len = 3
+        for key, value in fields.items():
+            if key not in str_fields:
+                continue
+            if not isinstance(value, str) or len(value.strip()) < min_len:
+                errors.append(f"Поле «{key.capitalize()}» слишком короткое (мин. {min_len} символа).")
+        return errors
 
     # ---------- paths ----------
 
@@ -2742,6 +2812,34 @@ class Pipe:
             out = "🧠 Анализ проекта :\n\n" + (review or "").strip()
             out += "\n\nКоманда: `анализ проекта`"
             return out
+
+        # /edit command
+        if cmd in {"/edit", "/редактировать", "редактировать", "/редакт"}:
+            state["meta"]["edit_mode"] = True
+            self._save_state(project_id, state)
+            return self._build_edit_view(state, project_id)
+
+        # edit mode: process incoming message
+        if state.get("meta", {}).get("edit_mode"):
+            if user_text.strip().lower() in {"готово", "/готово", "done", "/done"}:
+                state["meta"]["edit_mode"] = False
+                self._save_state(project_id, state)
+                return "✅ Редактирование завершено."
+            fields = self._parse_edit_message(user_text)
+            if not fields:
+                return (
+                    "⚠️ Не распознал поля. Используй формат `Поле: значение`.\n\n"
+                    + self._build_edit_view(state, project_id)
+                )
+            errors = self._validate_edit_fields(fields)
+            if errors:
+                return "⚠️ Ошибки валидации:\n" + "\n".join(f"- {e}" for e in errors)
+            for key, value in fields.items():
+                path = self._EDIT_FIELDS[key]
+                self._set_edit_field(state, path, value)
+            self._save_state(project_id, state)
+            changed = ", ".join(k.capitalize() for k in fields)
+            return f"✅ Сохранено: {changed}\n\n" + self._build_edit_view(state, project_id)
 
         # show instruction if empty
 
