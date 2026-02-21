@@ -74,9 +74,9 @@ def _re_sub(pattern, repl, string, flags=0):
 
 BASE_DIR = Path("/a3_assistant")
 
-STATE_DIR = BASE_DIR / "state" / "projects"
+STATE_DIR = Path("/app/backend/data/a3_state/projects")
 
-ACTIVE_DIR = BASE_DIR / "state" / "active_users"
+ACTIVE_DIR = Path("/app/backend/data/a3_state/active_users")
 
 STEPS_DIR = BASE_DIR / "steps"
 

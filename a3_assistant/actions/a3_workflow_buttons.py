@@ -12,9 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-BASE_DIR = Path("/a3_assistant")
-STATE_DIR = BASE_DIR / "state" / "projects"
-ACTIVE_DIR = BASE_DIR / "state" / "active_users"
+STATE_DIR = Path("/app/backend/data/a3_state/projects")
+ACTIVE_DIR = Path("/app/backend/data/a3_state/active_users")
 
 
 class Action:
