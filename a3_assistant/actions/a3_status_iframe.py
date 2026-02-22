@@ -43,10 +43,19 @@ class Action:
         return max(files, key=lambda f: f.stat().st_mtime).stem
 
     def _get_active_project(self, user_id: str) -> str:
-        # Try all plausible user_id variants (raw id, with/without dashes)
+        # 1) Global marker written by the pipe on every save/switch — most reliable.
+        global_p = STATE_DIR.parent / "global_active.json"
+        if global_p.exists():
+            try:
+                data = json.loads(global_p.read_text(encoding="utf-8"))
+                pid = str(data.get("project_id", "")).strip()
+                if pid:
+                    return pid
+            except Exception:
+                pass
+        # 2) User-specific file (both UUID formats).
         candidates = [user_id]
         if user_id and "-" not in user_id and len(user_id) == 32:
-            # UUID without dashes → try with dashes
             u = user_id
             candidates.append(f"{u[:8]}-{u[8:12]}-{u[12:16]}-{u[16:20]}-{u[20:]}")
         for uid in candidates:
@@ -60,10 +69,7 @@ class Action:
                     return pid
             except Exception:
                 pass
-        # Fallback: any active_users file (most recently written).
-        # For single-user deployments this always finds the right project
-        # even when the user_id format passed to the action differs from
-        # what the pipe stored.
+        # 3) Any active_users file (most recently written).
         active_files = list(ACTIVE_DIR.glob("*.json"))
         if active_files:
             newest = max(active_files, key=lambda f: f.stat().st_mtime)
@@ -74,6 +80,7 @@ class Action:
                     return pid
             except Exception:
                 pass
+        # 4) Most recently modified project file.
         return self._latest_project_fallback()
 
     def _load_state(self, project_id: str) -> dict[str, Any]:

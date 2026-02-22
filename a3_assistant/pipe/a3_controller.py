@@ -361,6 +361,16 @@ class Pipe:
 
         p.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        # Keep a global active-project marker so the status action can find
+        # the current project without depending on user_id format matching.
+        try:
+            (STATE_DIR.parent / "global_active.json").write_text(
+                json.dumps({"project_id": project_id}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
     # ---------- steps ----------
 
     def _load_step(self, step_id: int) -> Dict[str, Any]:
@@ -408,6 +418,15 @@ class Pipe:
             encoding="utf-8",
 
         )
+
+        # Also update global marker so the status action always sees the switch.
+        try:
+            (STATE_DIR.parent / "global_active.json").write_text(
+                json.dumps({"project_id": project_id}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     # ---------- commands ----------
 
