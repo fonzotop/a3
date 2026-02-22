@@ -357,7 +357,6 @@ class Action:
   <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;">
     {''.join(row2)}
   </div>
-  <div style="font-size:10px;color:#aaa;margin-top:6px;">dbg uid={self._safe(user_id[:8])}… pid={self._safe(project_id)}</div>
 </div>
 ```"""
 
