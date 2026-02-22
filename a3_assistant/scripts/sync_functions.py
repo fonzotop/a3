@@ -14,7 +14,8 @@ ACTION_DIR = Path("/a3_assistant/actions")
 
 
 def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore")
+    # utf-8-sig strips BOM automatically (files saved on Windows may have it)
+    return path.read_text(encoding="utf-8-sig", errors="ignore")
 
 
 def _resolve_user_id(cur: sqlite3.Cursor) -> str:
