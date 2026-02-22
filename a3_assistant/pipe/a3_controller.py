@@ -207,6 +207,96 @@ class Pipe:
         lines.append("```")
         return "\n".join(lines)
 
+    async def _generate_hypothesis(self, state: dict, project_id: str, __request__, __user__: dict) -> str:
+        steps = state.get("data", {}).get("steps", {})
+
+        raw_problem = steps.get("raw_problem", {}).get("raw_problem_sentence", "")
+        if not raw_problem:
+            return "⚠️ Сначала опиши проблему на шаге 1 — тогда смогу сгенерировать гипотезу."
+
+        spec = steps.get("problem_spec", {})
+        spec_text = (
+            f"Где/когда: {spec.get('where_when','—')}, "
+            f"Масштаб: {spec.get('scale','—')}, "
+            f"Последствия: {spec.get('consequences','—')}, "
+            f"Кто страдает: {spec.get('who_suffers','—')}, "
+            f"Деньги: {spec.get('money_impact','—')}"
+        ) if spec else "нет данных"
+
+        ctx = steps.get("process_context", {})
+        process_text = (
+            f"Начало: {ctx.get('start_event','—')}, "
+            f"Окончание: {ctx.get('end_event','—')}, "
+            f"Владелец: {ctx.get('owner','—')}, "
+            f"Периметр: {ctx.get('perimeter','—')}, "
+            f"Метрики: {', '.join(ctx.get('result_metrics') or ['—'])}"
+        ) if ctx else "нет данных"
+
+        system = (
+            "Ты методолог A3/Lean. Генерируй полный черновик A3 по предоставленным данным. "
+            "Верни СТРОГО JSON без пояснений."
+        )
+        user_prompt = (
+            "Сгенерируй полный черновик A3 по данным ниже.\n\n"
+            f"Проблема (шаг 1): {raw_problem}\n"
+            f"Уточнение (шаг 2): {spec_text}\n"
+            f"Процесс (шаг 3): {process_text}\n\n"
+            "Верни строго JSON:\n"
+            '{\n'
+            '  "problem": "...",\n'
+            '  "spec": {"where_when":"...","scale":"...","consequences":"...","who_suffers":"...","money_impact":"..."},\n'
+            '  "baseline": [{"metric":"...","current_value":"..."}],\n'
+            '  "target": [{"metric":"...","target_value":"..."}],\n'
+            '  "root_causes": ["...","...","..."],\n'
+            '  "actions": [{"action":"...","owner":"...","due":"..."}],\n'
+            '  "monitoring": "..."\n'
+            '}'
+        )
+
+        try:
+            data = await self._call_llm_json(
+                __request__, __user__,
+                [{"role": "system", "content": system}, {"role": "user", "content": user_prompt}],
+            )
+        except Exception as e:
+            return f"⚠️ Не удалось сгенерировать гипотезу: {e}"
+
+        lines = [
+            f"💡 **Авто-гипотеза A3** *(черновик — данные не сохранены)*\n",
+            "---",
+            "",
+            f"**1. Проблема**",
+            data.get("problem", "—"),
+            "",
+            "**2. Уточнение проблемы**",
+        ]
+        s = data.get("spec") or {}
+        for label, key in [("Где/когда", "where_when"), ("Масштаб", "scale"),
+                           ("Последствия", "consequences"), ("Кто страдает", "who_suffers"),
+                           ("Деньги", "money_impact")]:
+            lines.append(f"- {label}: {s.get(key, '—')}")
+
+        lines += ["", "**3. Текущее состояние**"]
+        for item in (data.get("baseline") or []):
+            lines.append(f"- {item.get('metric','—')}: {item.get('current_value','—')}")
+
+        lines += ["", "**4. Целевое состояние**"]
+        for item in (data.get("target") or []):
+            lines.append(f"- {item.get('metric','—')}: {item.get('target_value','—')}")
+
+        lines += ["", "**5. Коренные причины**"]
+        for rc in (data.get("root_causes") or []):
+            lines.append(f"- {rc}")
+
+        lines += ["", "**6. Мероприятия**"]
+        for act in (data.get("actions") or []):
+            lines.append(f"- {act.get('action','—')} ({act.get('owner','—')}, {act.get('due','—')})")
+
+        lines += ["", "**7. Мониторинг**", data.get("monitoring", "—")]
+        lines += ["", "---", "Для сохранения данных продолжи работу по шагам или используй `/edit`."]
+
+        return "\n".join(lines)
+
     def _parse_edit_message(self, text: str) -> dict:
         result = {}
         for line in (text or "").splitlines():
@@ -2813,6 +2903,10 @@ class Pipe:
             out += "\n\nКоманда: `анализ проекта`"
             return out
 
+        # /гипотеза command
+        if cmd in {"/гипотеза", "/hypothesis", "гипотеза"}:
+            return await self._generate_hypothesis(state, project_id, __request__, __user__)
+
         # /edit command
         if cmd in {"/edit", "/редактировать", "редактировать", "/редакт"}:
             state["meta"]["edit_mode"] = True
@@ -2960,9 +3054,9 @@ class Pipe:
 
             if hints:
 
-                msg += "\nПодсказки (по твоей проблеме):\n" + "\n".join(
+                msg += "\n\n---\n\n**Подсказки:**\n" + "\n".join(
 
-                    [f"- {h}" for h in hints]
+                    [f"> {h}" for h in hints]
 
                 )
 
@@ -3016,9 +3110,9 @@ class Pipe:
 
                 if hints:
 
-                    msg += "\nПодсказки (по твоей проблеме):\n" + "\n".join(
+                    msg += "\n\n---\n\n**Подсказки:**\n" + "\n".join(
 
-                        [f"- {h}" for h in hints]
+                        [f"> {h}" for h in hints]
 
                     )
 
@@ -3064,9 +3158,9 @@ class Pipe:
 
             if hints:
 
-                hints_block = "\n\nПодсказки (по твоей проблеме):\n" + "\n".join(
+                hints_block = "\n\n---\n\n**Подсказки:**\n" + "\n".join(
 
-                    [f"- {h}" for h in hints]
+                    [f"> {h}" for h in hints]
 
                 )
 
@@ -3146,39 +3240,47 @@ class Pipe:
 
                 if hints3:
 
-                    msg += "\nПодсказки:\n" + "\n".join([f"- {h}" for h in hints3])
+                    msg += "\n\n---\n\n**Подсказки:**\n" + "\n".join([f"> {h}" for h in hints3])
 
                 ex_lines = []
 
                 if examples3.get("start_event"):
 
-                    ex_lines.append("  Примеры события начала (под твой кейс):")
+                    if ex_lines:
+                        ex_lines.append("")
+                    ex_lines.append("**Примеры события начала:**")
 
-                    ex_lines += [f"  - `{x}`" for x in examples3.get("start_event")[:2]]
+                    ex_lines += [f"- `{x}`" for x in examples3.get("start_event")[:2]]
 
                 if examples3.get("end_event"):
 
-                    ex_lines.append("  Примеры события окончания (под твой кейс):")
+                    if ex_lines:
+                        ex_lines.append("")
+                    ex_lines.append("**Примеры события окончания:**")
 
-                    ex_lines += [f"  - `{x}`" for x in examples3.get("end_event")[:2]]
+                    ex_lines += [f"- `{x}`" for x in examples3.get("end_event")[:2]]
 
                 if examples3.get("owner"):
 
-                    ex_lines.append("  Примеры владельца процесса (роль/ответственный):")
+                    if ex_lines:
+                        ex_lines.append("")
+                    ex_lines.append("**Примеры владельца процесса:**")
 
-                    ex_lines += [f"  - `{x}`" for x in examples3.get("owner")[:2]]
+                    ex_lines += [f"- `{x}`" for x in examples3.get("owner")[:2]]
 
                 if examples3.get("perimeter"):
-                    ex_lines.append("  Примеры периметра (кто участвует):")
-                    ex_lines += [f"  - `{x}`" for x in examples3.get("perimeter")[:5]]
+                    if ex_lines:
+                        ex_lines.append("")
+                    ex_lines.append("**Примеры периметра (кто участвует):**")
+                    ex_lines += [f"- `{x}`" for x in examples3.get("perimeter")[:5]]
 
                 if ex_lines:
 
-                    msg += "\n\n" + "\n".join(ex_lines)
+                    msg += "\n\n---\n\n" + "\n".join(ex_lines)
 
                 if metric_sug:
 
-                    msg += "\n\n  Примеры метрик результата (предложение, выбери 2–4):\n"
+                    msg += "\n\n**Примеры метрик результата:**\n"
 
                     msg += "\n".join([f"- `{m}`" for m in metric_sug[:5]])
 
@@ -3267,7 +3369,7 @@ class Pipe:
 
                     if pv:
 
-                        msg += "Процессы (варианты):\n" + "\n".join(
+                        msg += "**Процессы:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in pv]
 
@@ -3275,7 +3377,7 @@ class Pipe:
 
                     if prj:
 
-                        msg += "Проекты (варианты):\n" + "\n".join(
+                        msg += "**Проекты:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in prj]
 
@@ -3319,7 +3421,7 @@ class Pipe:
 
                     if pv:
 
-                        msg += "Процессы (варианты):\n" + "\n".join(
+                        msg += "**Процессы:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in pv]
 
@@ -3327,7 +3429,7 @@ class Pipe:
 
                     if prj:
 
-                        msg += "Проекты (варианты):\n" + "\n".join(
+                        msg += "**Проекты:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in prj]
 
@@ -3349,7 +3451,7 @@ class Pipe:
 
                     if pv:
 
-                        msg += "Процессы (варианты):\n" + "\n".join(
+                        msg += "**Процессы:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in pv]
 
@@ -3357,7 +3459,7 @@ class Pipe:
 
                     if prj:
 
-                        msg += "Проекты (варианты):\n" + "\n".join(
+                        msg += "**Проекты:**\n" + "\n".join(
 
                             [f"- `{x}`" for x in prj]
 
@@ -3473,7 +3575,7 @@ class Pipe:
 
                             if sugg:
 
-                                msg += "\nМетрики (варианты):\n" + "\n".join(
+                                msg += "\n\n**Метрики (варианты):**\n" + "\n".join(
 
                                     [f"- `{x}`" for x in sugg]
 
@@ -3513,7 +3615,7 @@ class Pipe:
 
                 if pv:
 
-                    msg += "Процессы (варианты):\n" + "\n".join(
+                    msg += "**Процессы:**\n" + "\n".join(
 
                         [f"- `{x}`" for x in pv]
 
@@ -3521,7 +3623,7 @@ class Pipe:
 
                 if prj:
 
-                    msg += "Проекты (варианты):\n" + "\n".join(
+                    msg += "**Проекты:**\n" + "\n".join(
 
                         [f"- `{x}`" for x in prj]
 
@@ -3663,7 +3765,7 @@ class Pipe:
 
                 if pv:
 
-                    out += "Процессы (варианты):\n" + "\n".join(
+                    out += "**Процессы:**\n" + "\n".join(
 
                         [f"- `{x}`" for x in pv]
 
@@ -3671,7 +3773,7 @@ class Pipe:
 
                 if prj:
 
-                    out += "Проекты (варианты):\n" + "\n".join(
+                    out += "**Проекты:**\n" + "\n".join(
 
                         [f"- `{x}`" for x in prj]
 
@@ -3734,38 +3836,46 @@ class Pipe:
 
             if hints:
 
-                msg += "\nПодсказки:\n" + "\n".join([f"- {h}" for h in hints])
+                msg += "\n\n---\n\n**Подсказки:**\n" + "\n".join([f"> {h}" for h in hints])
 
             ex_lines = []
 
             if examples.get("start_event"):
 
-                ex_lines.append("Примеры события начала (под твой кейс):")
+                if ex_lines:
+                    ex_lines.append("")
+                ex_lines.append("**Примеры события начала:**")
 
                 ex_lines += [f"- `{x}`" for x in examples.get("start_event")[:2]]
 
             if examples.get("end_event"):
 
-                ex_lines.append("Примеры события окончания (под твой кейс):")
+                if ex_lines:
+                    ex_lines.append("")
+                ex_lines.append("**Примеры события окончания:**")
 
                 ex_lines += [f"- `{x}`" for x in examples.get("end_event")[:2]]
 
             if examples.get("owner"):
 
-                ex_lines.append("Примеры владельца процесса (роль/ответственный):")
+                if ex_lines:
+                    ex_lines.append("")
+                ex_lines.append("**Примеры владельца процесса:**")
 
                 ex_lines += [f"- `{x}`" for x in examples.get("owner")[:2]]
 
             if examples.get("perimeter"):
-                ex_lines.append("Примеры периметра (кто участвует):")
+                if ex_lines:
+                    ex_lines.append("")
+                ex_lines.append("**Примеры периметра (кто участвует):**")
                 ex_lines += [f"- `{x}`" for x in examples.get("perimeter")[:5]]
 
             if ex_lines:
 
-                msg += "\n\n" + "\n".join(ex_lines)
+                msg += "\n\n---\n\n" + "\n".join(ex_lines)
 
             if metric_suggestions:
-                msg += "\n\nПримеры метрик результата (предложение, выбери 2–4):\n"
+                msg += "\n\n**Примеры метрик результата:**\n"
                 msg += "\n".join([f"- `{m}`" for m in metric_suggestions[:5]])
 
             msg += "\n\nЧтобы обновить варианты — напиши: `обнови варианты`."
@@ -4444,7 +4554,7 @@ class Pipe:
             )
 
             if pool:
-                msg += "Проблемы (варианты):\n" + "\n".join([f"- `{x}`" for x in pool]) + "\n\n"
+                msg += "**Проблемы (варианты):**\n" + "\n".join([f"- `{x}`" for x in pool]) + "\n\n"
             msg += (
                 "Ответь одним сообщением по шаблону:\n"
                 "```\nПроблемы:\n- ...\n- ...\n```\n\n"
@@ -4580,7 +4690,7 @@ class Pipe:
 
                 if pool:
 
-                    msg += "\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b (\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b):\n" + "\n".join([f"- `{x}`" for x in pool]) + "\n\n"
+                    msg += "**\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b (\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b):**\n" + "\n".join([f"- `{x}`" for x in pool]) + "\n\n"
 
                 msg += (
 
@@ -4637,7 +4747,7 @@ class Pipe:
 
                 if suggestions:
 
-                    msg += "".join(["```\n" + x + "\n```\n\n" for x in suggestions])
+                    msg += "**\u0412\u0430\u0440\u0438\u0430\u043d\u0442\u044b \u043e\u0442\u0432\u0435\u0442\u0430:**\n" + "\n".join([f"- `{x}`" for x in suggestions]) + "\n\n"
 
                 msg += (
 
@@ -5170,7 +5280,7 @@ class Pipe:
                 msg += "\U0001f9e9 \u0428\u0430\u0433 7: \u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b \u043f\u043e \u043a\u043e\u0440\u043d\u0435\u0432\u044b\u043c \u043f\u0440\u0438\u0447\u0438\u043d\u0430\u043c\n\n"
                 msg += f"\u041a\u043e\u0440\u043d\u0435\u0432\u0430\u044f \u043f\u0440\u0438\u0447\u0438\u043d\u0430: {root_text}\n\n"
                 if actions:
-                    msg += "\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b (\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b):\n" + "\n".join([f"- `{x}`" for x in actions]) + "\n\n"
+                    msg += "**\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b (\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b):**\n" + "\n".join([f"- `{x}`" for x in actions]) + "\n\n"
                 msg += (
                     "\u041e\u0442\u0432\u0435\u0442\u044c \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c \u043f\u043e \u0448\u0430\u0431\u043b\u043e\u043d\u0443:\n"
                     "```\n\u041a\u043e\u043d\u0442\u0440\u043c\u0435\u0440\u044b:\n- ...\n- ...\n```\n\n"
