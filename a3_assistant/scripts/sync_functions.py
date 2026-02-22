@@ -239,7 +239,8 @@ def main() -> None:
             'a3_pm_methodologist',
             'smart_infographic',
             'export_to_word_enhanced_formatting',
-            'a3_workflow_buttons'
+            'a3_workflow_buttons',
+            'a3_status_iframe'
         )
         ORDER BY id
         """
