@@ -60,6 +60,20 @@ class Action:
                     return pid
             except Exception:
                 pass
+        # Fallback: any active_users file (most recently written).
+        # For single-user deployments this always finds the right project
+        # even when the user_id format passed to the action differs from
+        # what the pipe stored.
+        active_files = list(ACTIVE_DIR.glob("*.json"))
+        if active_files:
+            newest = max(active_files, key=lambda f: f.stat().st_mtime)
+            try:
+                data = json.loads(newest.read_text(encoding="utf-8"))
+                pid = str(data.get("project_id", "")).strip()
+                if pid:
+                    return pid
+            except Exception:
+                pass
         return self._latest_project_fallback()
 
     def _load_state(self, project_id: str) -> dict[str, Any]:
