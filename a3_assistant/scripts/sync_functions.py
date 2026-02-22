@@ -199,6 +199,16 @@ def main() -> None:
             },
             None,
         ),
+        (
+            "a3_status_iframe",
+            "A3 Project Status",
+            ACTION_DIR / "a3_status_iframe.py",
+            {
+                "description": "Shows A3 project status board as an inline HTML panel.",
+                "manifest": {"title": "A3 Project Status", "author": "local"},
+            },
+            None,
+        ),
     ]
 
     for function_id, name, path, meta, valves in actions:
