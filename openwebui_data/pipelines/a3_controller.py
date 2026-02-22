@@ -2801,6 +2801,16 @@ class Pipe:
 
         project_id = self._get_active_project(user_id)
 
+        # Always keep global_active.json current so the status action
+        # can find the right project without user_id lookup.
+        try:
+            (STATE_DIR.parent / "global_active.json").write_text(
+                json.dumps({"project_id": project_id}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
         # -------- commands --------
 
         if cmd == "/projects":
