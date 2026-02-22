@@ -35,21 +35,32 @@ class Action:
             return str(first.get("id", "unknown_user"))
         return "unknown_user"
 
+    def _latest_project_fallback(self) -> str:
+        """Return the most recently modified project file stem."""
+        files = list(STATE_DIR.glob("*.json"))
+        if not files:
+            return "A3-0001"
+        return max(files, key=lambda f: f.stat().st_mtime).stem
+
     def _get_active_project(self, user_id: str) -> str:
-        p = ACTIVE_DIR / f"{user_id}.json"
-        if not p.exists():
-            fallback = sorted(STATE_DIR.glob("*.json"))
-            return fallback[-1].stem if fallback else "A3-0001"
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            pid = str(data.get("project_id", "")).strip()
-            if pid:
-                return pid
-            fallback = sorted(STATE_DIR.glob("*.json"))
-            return fallback[-1].stem if fallback else "A3-0001"
-        except Exception:
-            fallback = sorted(STATE_DIR.glob("*.json"))
-            return fallback[-1].stem if fallback else "A3-0001"
+        # Try all plausible user_id variants (raw id, with/without dashes)
+        candidates = [user_id]
+        if user_id and "-" not in user_id and len(user_id) == 32:
+            # UUID without dashes → try with dashes
+            u = user_id
+            candidates.append(f"{u[:8]}-{u[8:12]}-{u[12:16]}-{u[16:20]}-{u[20:]}")
+        for uid in candidates:
+            p = ACTIVE_DIR / f"{uid}.json"
+            if not p.exists():
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                pid = str(data.get("project_id", "")).strip()
+                if pid:
+                    return pid
+            except Exception:
+                pass
+        return self._latest_project_fallback()
 
     def _load_state(self, project_id: str) -> dict[str, Any]:
         p = STATE_DIR / f"{project_id}.json"
