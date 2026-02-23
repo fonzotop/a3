@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path("/a3_assistant")
 STATE_DIR = Path("/app/backend/data/a3_state/projects")
+ACTIVE_DIR = Path("/app/backend/data/a3_state/active_users")
 
 
 class Action:
@@ -35,8 +36,18 @@ class Action:
         return "unknown_user"
 
     def _get_active_project(self, user_id: str) -> str:
-        # Most recently modified project file = active project.
-        # Skip A3-0001 (default/empty) when real projects exist.
+        # 1) User's own active-project file (written by pipe on /continue or /new).
+        if user_id and user_id != "unknown_user":
+            p = ACTIVE_DIR / f"{user_id}.json"
+            if p.exists():
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    pid = str(data.get("project_id", "")).strip()
+                    if pid:
+                        return pid
+                except Exception:
+                    pass
+        # 2) Most recently modified project file (skip A3-0001 when real projects exist).
         files = list(STATE_DIR.glob("*.json"))
         if not files:
             return "A3-0001"

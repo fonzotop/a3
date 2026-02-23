@@ -2872,24 +2872,17 @@ class Pipe:
             project_id = new_id
 
             if not self._state_path(project_id).exists():
+                state_to_save = {
+                    "project_id": project_id,
+                    "current_step": 1,
+                    "meta": {},
+                    "data": {},
+                }
+            else:
+                state_to_save = self._load_state(project_id)
 
-                self._save_state(
-
-                    project_id,
-
-                    {
-
-                        "project_id": project_id,
-
-                        "current_step": 1,
-
-                        "meta": {},
-
-                        "data": {},
-
-                    },
-
-                )
+            # Always save to update mtime so the status action sees this as the active project.
+            self._save_state(project_id, state_to_save)
 
             step1 = self._load_step(1)
 
