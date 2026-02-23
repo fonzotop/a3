@@ -243,6 +243,23 @@ class Action:
             "customer": "Генеральный директор",
         }
 
+    def _debug_info(self, user_id: str) -> str:
+        active_p = ACTIVE_DIR / f"{user_id}.json"
+        active_exists = active_p.exists()
+        active_content = ""
+        if active_exists:
+            try:
+                active_content = active_p.read_text(encoding="utf-8")[:80]
+            except Exception as e:
+                active_content = str(e)
+        files = list(STATE_DIR.glob("*.json"))
+        mtimes = sorted([(f.stem, round(f.stat().st_mtime)) for f in files], key=lambda x: -x[1])[:5]
+        return (
+            f"uid={user_id[:16]} | "
+            f"active={'Y:' + active_content if active_exists else 'N'} | "
+            f"mt={mtimes}"
+        )
+
     async def action(
         self,
         body: dict,
@@ -254,6 +271,7 @@ class Action:
     ) -> Optional[dict]:
         user_id = self._extract_user_id(__user__)
         project_id = self._get_active_project(user_id)
+        _dbg = self._debug_info(user_id)
         state = self._load_state(project_id)
         step = int(state.get("current_step", 1))
         meta = self._process_meta(state, project_id)
@@ -329,6 +347,7 @@ class Action:
   <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;">
     {''.join(row2)}
   </div>
+  <div style="font-size:10px;color:#888;margin-top:6px;word-break:break-all;">DBG: {self._safe(_dbg)}</div>
 </div>
 ```"""
 
